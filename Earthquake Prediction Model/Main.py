@@ -12,7 +12,7 @@ from mpl_toolkits.basemap import Basemap
 
 from sklearn.model_selection import train_test_split
 
-data = pd.read_csv("database.csv")
+data = pd.read_csv("/Users/Rohan/Documents/Individual-Projects/Earthquake Prediction Model/database.csv")
 data.columns
 
 data = data[["Date", "Time", "Latitude", "Longitude", "Depth", "Magnitude"]]
