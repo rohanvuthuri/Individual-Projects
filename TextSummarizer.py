@@ -4,7 +4,7 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize 
 
 # Input text - to summarize 
-#text = """ """
+text = """ """
 text = input("Enter a phrase: ")
 
 # Tokenizing the text 
