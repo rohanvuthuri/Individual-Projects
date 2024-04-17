@@ -44,7 +44,6 @@ model.compile(optimizer="adam", loss="mse", metrics=['accuracy'])
 model.fit(x_train, y_train, batch_size=10, epochs=20, verbose=1, validation_data=(x_test, y_test))
 
 
-# Example: predict using some new data
 current_time = datetime.datetime.now()
 timestamp_value = int(time.mktime(current_time.timetuple()))
 latitude_guess = float(input("Enter latitude: "))
