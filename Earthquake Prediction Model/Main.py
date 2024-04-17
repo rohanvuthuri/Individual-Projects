@@ -5,6 +5,9 @@ import pandas as pd
 import numpy as np
 import datetime
 import time
+from mpl_toolkits.basemap import Basemap
+import matplotlib.pyplot as plt
+import folium
 
 # Assuming 'x' is your input features and 'y' is the coordinates
 data = pd.read_csv("/Users/Rohan/Documents/Individual-Projects/Earthquake Prediction Model/database.csv")
@@ -50,3 +53,15 @@ print("Predicted Coordinates: Longitude = {:.4f}, Latitude = {:.4f}".format(pred
 
 evaluation = model.evaluate(x_test, y_test)
 print(f"Loss: {evaluation[0]}, Accuracy: {evaluation[1]}")
+
+# Setting up the map
+m = Basemap(projection='mill', llcrnrlat=-80, urcrnrlat=80, llcrnrlon=-180, urcrnrlon=180, lat_ts=20, resolution='c')
+m.drawcoastlines()
+m.drawcountries()
+
+# Plotting predicted coordinates
+x, y = m(predicted_coordinates[0][0], predicted_coordinates[0][1])
+m.plot(x, y, 'bo', markersize=10000)  # 'bo' for blue dot
+#Blue dot will show where the next nearest location of earthquake
+plt.title('Predicted Earthquake Location')
+plt.show()
