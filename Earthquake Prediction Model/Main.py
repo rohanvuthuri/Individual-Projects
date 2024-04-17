@@ -44,7 +44,7 @@ current_time = datetime.datetime.now()
 timestamp_value = int(time.mktime(current_time.timetuple()))
 latitude_guess = float(input("Enter latitude: "))
 longitude_guess = float(input("Enter longitude: "))
-new_data = np.array([[timestamp_value, latitude_guess, longitude_guess]])  # Input your own values
+new_data = np.array([[timestamp_value, latitude_guess, longitude_guess]])
 predicted_coordinates = model.predict(new_data)
 print("Predicted Coordinates: Longitude = {:.4f}, Latitude = {:.4f}".format(predicted_coordinates[0][0], predicted_coordinates[0][1]))
 
