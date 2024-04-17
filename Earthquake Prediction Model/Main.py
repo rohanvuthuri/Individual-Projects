@@ -8,6 +8,7 @@ import time
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
 import folium
+from keras.layers import Input, Dense
 
 # Assuming 'x' is your input features and 'y' is the coordinates
 data = pd.read_csv("/Users/Rohan/Documents/Individual-Projects/Earthquake Prediction Model/database.csv")
@@ -34,7 +35,9 @@ x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_
 x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
 
 model = Sequential()
-model.add(Dense(25, activation='relu', input_shape=(x_train.shape[1],)))
+input_shape = Input(shape=(x_train.shape[1], ))
+model.add(input_shape)
+model.add(Dense(25, activation='relu'))
 model.add(Dense(15, activation='relu'))
 model.add(Dense(2, activation='linear'))  # Output layer for predicting latitude and longitude
 model.compile(optimizer="adam", loss="mse", metrics=['accuracy'])
@@ -60,7 +63,7 @@ m.drawcoastlines()
 m.drawcountries()
 
 # Plotting predicted coordinates
-x, y = m(predicted_coordinates[0][0], predicted_coordinates[0][1])
+x, y = m(predicted_coordinates[0][1], predicted_coordinates[0][0])
 m.plot(x, y, 'bo', markersize=10000)  # 'bo' for blue dot
 #Blue dot will show where the next nearest location of earthquake
 plt.title('Predicted Earthquake Location')
