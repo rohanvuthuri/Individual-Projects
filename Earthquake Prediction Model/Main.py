@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import folium
 from keras.layers import Input, Dense
 
-# Assuming 'x' is your input features and 'y' is the coordinates
 data = pd.read_csv("/Users/Rohan/Documents/Individual-Projects/Earthquake Prediction Model/database.csv")
 data.columns
 
