@@ -30,7 +30,6 @@ final_data.head()
 x = final_data[["Timestamp", "Latitude", "Longitude"]]
 y = final_data[["Magnitude", "Depth"]]
 x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
-x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
 
 model = Sequential()
 input_shape = Input(shape=(x_train.shape[1], ))
