@@ -60,7 +60,7 @@ m.drawcountries()
 
 # Plotting predicted coordinates
 x, y = m(predicted_coordinates[0][0], predicted_coordinates[0][1])
-m.plot(x, y, 'bo', markersize=1)  # 'bo' for blue dot
+m.plot(x, y, 'bo', markersize=5)  # 'bo' for blue dot
 #Blue dot will show where the next nearest location of earthquake
 plt.title('Predicted Earthquake Location')
 plt.show()
