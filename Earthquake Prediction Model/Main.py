@@ -34,8 +34,8 @@ x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_
 model = Sequential()
 input_shape = Input(shape=(x_train.shape[1], ))
 model.add(input_shape)
-model.add(Dense(25, activation='relu'))
-model.add(Dense(15, activation='relu'))
+model.add(Dense(25, activation='sigmoid'))
+model.add(Dense(15, activation='sigmoid'))
 model.add(Dense(2, activation='linear'))  # Output layer for predicting latitude and longitude
 model.compile(optimizer="adam", loss="mse", metrics=['accuracy'])
 
@@ -53,15 +53,14 @@ print("Predicted Coordinates: Longitude = {:.4f}, Latitude = {:.4f}".format(pred
 evaluation = model.evaluate(x_test, y_test)
 print(f"Loss: {evaluation[0]}, Accuracy: {evaluation[1]}")
 
-#Still working on display longitude and latitude coordinates on map
-'''# Setting up the map
+# Setting up the map
 m = Basemap(projection='mill', llcrnrlat=-80, urcrnrlat=80, llcrnrlon=-180, urcrnrlon=180, lat_ts=20, resolution='c')
 m.drawcoastlines()
 m.drawcountries()
 
 # Plotting predicted coordinates
 x, y = m(predicted_coordinates[0][1], predicted_coordinates[0][0])
-m.plot(x, y, 'bo', markersize=100000)  # 'bo' for blue dot
+m.plot(x, y, 'bo', markersize=10)  # 'bo' for blue dot
 #Blue dot will show where the next nearest location of earthquake
 plt.title('Predicted Earthquake Location')
-plt.show()'''
+plt.show()
