@@ -28,6 +28,11 @@ section {
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 }
 
+section a {
+    color: blue;
+    text-decoration: none;
+}
+
 h2 {
     border-bottom: 2px solid #333;
     padding-bottom: 0.5rem;
