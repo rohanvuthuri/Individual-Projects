@@ -58,6 +58,13 @@ p {
     margin: 0.5rem 0;
 }
 
+.size {
+    margin-left: 300px;
+    margin-bottom: 10px;
+    width:200px;
+    height:250px;
+}
+
 @media (max-width: 600px) {
     section {
         padding: 1rem;
