@@ -25,10 +25,21 @@ for d, t in zip(data["Date"], data["Time"]):
 timeStamp = pd.Series(timestamp)
 data["Timestamp"] = timeStamp.values
 final_data = data.drop(["Date","Time"], axis=1)
-final_data = final_data[final_data.Timestamp != "ValueError"]
-final_data.head()
-x = final_data[["Timestamp", "Latitude", "Longitude"]]
-y = final_data[["Magnitude", "Depth"]]
+# final_data = final_data[final_data.Timestamp != "ValueError"]
+# final_data.head()
+# x = final_data[["Timestamp", "Latitude", "Longitude"]]
+# y = final_data[["Magnitude", "Depth"]]
+# x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+
+# Clean and preprocess data
+final_data = final_data[final_data["Timestamp"] != "ValueError"]
+final_data = final_data.dropna()  # Drop rows with NaN values
+
+# Ensure all columns are numeric
+x = final_data[["Timestamp", "Latitude", "Longitude"]].apply(pd.to_numeric)
+y = final_data[["Magnitude", "Depth"]].apply(pd.to_numeric)
+
+# Split the data
 x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
 
 model = Sequential()
