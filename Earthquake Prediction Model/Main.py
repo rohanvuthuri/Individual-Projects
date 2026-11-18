@@ -8,8 +8,11 @@ import time
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
 from keras.layers import Input, Dense
+from dotenv import load_dotenv
+import os
 
-data = pd.read_csv("/Users/Rohan/Documents/Individual-Projects/Earthquake Prediction Model/database.csv")
+load_dotenv()
+data = pd.read_csv(os.getenv("CSV_PATH"))
 data.columns
 
 data = data[["Date", "Time", "Latitude", "Longitude", "Depth", "Magnitude"]]
