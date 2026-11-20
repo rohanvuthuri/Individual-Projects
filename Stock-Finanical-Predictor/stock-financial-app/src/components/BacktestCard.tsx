@@ -37,8 +37,38 @@ function ModelRow({ name, metrics, extra }: { name: string; metrics: BacktestMet
   )
 }
 
+function SamePeriodComparison({ comparison: c }: { comparison: NonNullable<Prediction['stack']>['comparison'] }) {
+  const rows = [
+    { label: 'Gradient boosting', value: c.gbm },
+    { label: 'LSTM', value: c.lstm },
+    { label: 'Stacked meta-model', value: c.stacked },
+  ]
+  const best = Math.max(...rows.map((r) => r.value))
+  return (
+    <>
+      <h3 className="card__subhead">Head to head on the same {c.samples.toLocaleString()} test periods</h3>
+      <p className="muted card__intro">
+        Each base model's numbers above cover slightly different periods. This scores all three on identical ones, the fair way to
+        see whether stacking helped. The tick is the naive guess ({formatPct(c.naive)}).
+      </p>
+      <ul className="comparison">
+        {rows.map((r) => (
+          <li key={r.label}>
+            <span className={r.value === best ? 'comparison__label is-best' : 'comparison__label'}>{r.label}</span>
+            <div className="bullet" aria-hidden="true">
+              <div className="bullet__fill" style={{ width: `${r.value * 100}%` }} />
+              <div className="bullet__target" style={{ left: `${c.naive * 100}%` }} />
+            </div>
+            <span className="num comparison__value">{formatPct(r.value)}</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
 export function BacktestCard({ prediction: p, theme }: { prediction: Prediction; theme: ChartTheme }) {
-  const { gbm, lstm } = p
+  const { gbm, lstm, stack } = p
   return (
     <section className="card" aria-labelledby="backtest-title">
       <header className="card__header">
@@ -63,6 +93,15 @@ export function BacktestCard({ prediction: p, theme }: { prediction: Prediction;
       ) : (
         <p className="muted">LSTM backtest appears once training finishes.</p>
       )}
+      {stack && (
+        <ModelRow
+          name="Stacked meta-model"
+          metrics={stack.metrics}
+          extra={stack.metrics.auc !== null ? `AUC ${stack.metrics.auc.toFixed(2)} (needs > 0.52 to be used)` : ''}
+        />
+      )}
+
+      {stack && <SamePeriodComparison comparison={stack.comparison} />}
 
       <h3 className="card__subhead">Gradient boosting strategy vs. buy &amp; hold</h3>
       <p className="muted card__intro">

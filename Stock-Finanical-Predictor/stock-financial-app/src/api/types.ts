@@ -91,6 +91,8 @@ export interface Prediction {
   confidence: number
   provisional: boolean
   agreement: 'agree' | 'disagree' | 'neutral' | null
+  /** Who made the call: the meta-model, the both-must-agree rule, or GBM alone while the LSTM trains. */
+  method: 'stacked' | 'agreement' | 'gbm_only'
   gbm: {
     prob_up: number
     metrics: GbmMetrics
@@ -101,11 +103,24 @@ export interface Prediction {
   lstm: {
     status: 'ready' | 'training' | 'error'
     error: string | null
+    /** An older model is shown while a fresh one trains in the background. */
+    retraining: boolean
     predicted_return?: number
     target_price?: number
     metrics?: LstmMetrics
     trained_at?: string
   }
+  /** Stacking meta-model; null until the LSTM has trained (or too little shared history). */
+  stack: {
+    prob_up: number
+    /** Effective trust in each model at today's volatility (0 = ignored). */
+    weights: { gbm: number; lstm: number }
+    metrics: GbmMetrics
+    /** Accuracy of each approach on exactly the same test periods. */
+    comparison: { gbm: number; lstm: number; stacked: number; naive: number; samples: number }
+    /** Only used for the call when its own backtest beat a naive guess. */
+    earned_trust: boolean
+  } | null
 }
 
 export type Rating = 'good' | 'neutral' | 'poor' | 'info'

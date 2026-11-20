@@ -15,7 +15,7 @@ from . import data, indicators as ind
 from .data import NotEnoughData, TickerNotFound
 from .features import build_dataset
 from .fundamentals import get_fundamentals
-from .models import gbm, lstm, registry
+from .models import gbm, lstm, registry, stacking
 from .modes import MODES, get_mode
 from .signals import combine
 
@@ -147,9 +147,10 @@ def predict(ticker: str, mode: str = "swing"):
     g = registry.get_gbm(ticker, m, X, fwd_ret, df["Close"])
     prob_up = gbm.predict(g, X.iloc[[-1]])
 
-    status, l_bundle, l_error = registry.get_lstm(ticker, m, X, fwd_ret)
-    lstm_out: dict = {"status": status, "error": l_error}
+    status, l_bundle, l_error, retraining = registry.get_lstm(ticker, m, X, fwd_ret)
+    lstm_out: dict = {"status": status, "error": l_error, "retraining": retraining}
     lstm_return = None
+    stack_out = None
     if l_bundle is not None:
         lstm_return = lstm.predict(l_bundle, X, m.lookback)
         lstm_out.update({
@@ -158,10 +159,24 @@ def predict(ticker: str, mode: str = "swing"):
             "metrics": l_bundle["metrics"],
             "trained_at": l_bundle["trained_at"].isoformat(),
         })
+        stack = l_bundle.get("stack")
+        if stack is not None:
+            stacked_prob, weights = stacking.predict(stack, prob_up, lstm_return, X.iloc[[-1]])
+            stack_out = {
+                "prob_up": stacked_prob,
+                "weights": weights,
+                "metrics": stack["metrics"],
+                "comparison": stack["comparison"],
+                "earned_trust": stack["earned_trust"],
+            }
 
+    # The meta-model only makes the call if its backtest earned it.
+    use_stack = stack_out is not None and stack_out["earned_trust"]
     decision = combine(
         prob_up, g["metrics"], lstm_return,
         l_bundle["metrics"] if l_bundle else None, typical_move,
+        stacked_prob=stack_out["prob_up"] if use_stack else None,
+        stack_metrics=stack_out["metrics"] if use_stack else None,
     )
     return {
         "ticker": ticker,
@@ -184,4 +199,5 @@ def predict(ticker: str, mode: str = "swing"):
             "trained_at": g["trained_at"].isoformat(),
         },
         "lstm": lstm_out,
+        "stack": stack_out,
     }

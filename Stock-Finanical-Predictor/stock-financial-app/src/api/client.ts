@@ -76,9 +76,10 @@ export function usePrediction(ticker: string, mode: ModeKey) {
   return useQuery({
     queryKey: ['predict', ticker, mode],
     queryFn: () => get<Prediction>(`/predict/${t(ticker)}?mode=${mode}`),
-    // Keep asking while the LSTM trains in the background on the server.
+    // Keep asking while the LSTM (and the meta-model after it) trains on the
+    // server, including when an older model is being shown in the meantime.
     refetchInterval: (query) =>
-      query.state.data?.lstm.status === 'training'
+      query.state.data?.lstm.status === 'training' || query.state.data?.lstm.retraining
         ? TRAINING_POLL_MS
         : mode === 'day'
           ? INTRADAY_REFRESH_MS

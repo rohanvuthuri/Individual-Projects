@@ -12,10 +12,10 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 from ..modes import Mode
+from .validation import direction_metrics, walk_forward
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
-TEST_FRACTION = 0.2
 MAX_EPOCHS = 40
 BATCH_SIZE = 64
 
@@ -42,68 +42,63 @@ def _build(lookback: int, n_features: int):
     return model
 
 
-def train(X: pd.DataFrame, fwd_ret: pd.Series, mode: Mode) -> dict:
+def _fit(values: np.ndarray, target: np.ndarray, train_ends: np.ndarray, lb: int, epochs: int | None):
+    """Train one network on the windows ending at `train_ends`.
+
+    With epochs=None, early stopping on a validation slice picks the epoch count.
+    Scaling is fit on training rows only so later statistics don't leak in.
+    Returns (model, scaled values, y_scale, epochs used).
+    """
     from keras.callbacks import EarlyStopping
     from keras.utils import set_random_seed
 
     # Same idea as the Earthquake model: a fixed seed makes runs repeatable.
     set_random_seed(42)
+    scaler = StandardScaler().fit(values[: train_ends[-1] + 1])
+    scaled = scaler.transform(values).astype(np.float32)
+    y_scale = float(np.std(target[train_ends])) or 1.0
 
+    model = _build(lb, values.shape[1])
+    x, y = _windows(scaled, train_ends, lb), target[train_ends] / y_scale
+    if epochs is None:
+        stop = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
+        history = model.fit(x, y, validation_split=0.15, epochs=MAX_EPOCHS, batch_size=BATCH_SIZE,
+                            shuffle=True, callbacks=[stop], verbose=0)
+        epochs = int(np.argmin(history.history["val_loss"])) + 1
+    else:
+        model.fit(x, y, epochs=epochs, batch_size=BATCH_SIZE, shuffle=True, verbose=0)
+    return model, scaler, scaled, y_scale, epochs
+
+
+def train(X: pd.DataFrame, fwd_ret: pd.Series, mode: Mode) -> dict:
     values = X.to_numpy(dtype=np.float32)
     target = fwd_ret.to_numpy(dtype=np.float32)
     lb = mode.lookback
     ends = np.where(~np.isnan(target))[0]
     ends = ends[ends >= lb - 1]
 
-    # Hold out the most recent samples for testing, with a horizon-sized gap so
-    # training labels don't overlap the test period.
-    n_test = int(len(ends) * TEST_FRACTION)
-    test_ends = ends[-n_test:]
-    train_ends = ends[ends < test_ends[0] - mode.horizon]
+    # Walk-forward with the same folds as gradient boosting, so both models
+    # have out-of-sample predictions for the same periods (needed for stacking).
+    oof = np.full(len(X), np.nan)
+    fold_epochs = []
+    for tr, te in walk_forward(len(ends), mode.horizon):
+        train_ends, test_ends = ends[tr], ends[te]
+        model, _, scaled, y_scale, epochs = _fit(values, target, train_ends, lb, epochs=None)
+        # Calling the model directly (not .predict) avoids TensorFlow re-tracing warnings per fold.
+        oof[test_ends] = model(_windows(scaled, test_ends, lb), training=False).numpy().ravel() * y_scale
+        fold_epochs.append(epochs)
 
-    # Fit scaling on training rows only so test statistics don't leak in.
-    scaler = StandardScaler().fit(values[: train_ends[-1] + 1])
-    scaled = scaler.transform(values).astype(np.float32)
-    y_scale = float(np.std(target[train_ends])) or 1.0
+    oof_pred = pd.Series(oof, index=X.index).dropna()
+    actual = fwd_ret[oof_pred.index]
+    metrics = direction_metrics(actual > 0, oof_pred > 0, oof_pred)
+    metrics.update({
+        "rmse": float(np.sqrt(np.mean((oof_pred - actual) ** 2))),
+        "correlation": float(np.corrcoef(oof_pred, actual)[0, 1]) if oof_pred.std() > 0 else 0.0,
+        "epochs": int(np.median(fold_epochs)),
+    })
 
-    stop = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
-    model = _build(lb, values.shape[1])
-    history = model.fit(
-        _windows(scaled, train_ends, lb), target[train_ends] / y_scale,
-        validation_split=0.15, epochs=MAX_EPOCHS, batch_size=BATCH_SIZE,
-        shuffle=True, callbacks=[stop], verbose=0,
-    )
-    best_epochs = int(np.argmin(history.history["val_loss"])) + 1
-
-    pred = model.predict(_windows(scaled, test_ends, lb), verbose=0).ravel() * y_scale
-    actual = target[test_ends]
-    up_rate = float((actual > 0).mean())
-    accuracy = float(((pred > 0) == (actual > 0)).mean())
-    metrics = {
-        "accuracy": accuracy,
-        "baseline": up_rate,
-        "rmse": float(np.sqrt(np.mean((pred - actual) ** 2))),
-        "correlation": float(np.corrcoef(pred, actual)[0, 1]) if np.std(pred) > 0 else 0.0,
-        "test_samples": int(len(test_ends)),
-        "test_start": str(X.index[test_ends[0]].date()),
-        "test_end": str(X.index[test_ends[-1]].date()),
-        "epochs": best_epochs,
-    }
-    metrics["beats_baseline"] = accuracy > max(up_rate, 1 - up_rate)
-
-    # Retrain on everything (including the test period) for the live forecast,
-    # using the epoch count that worked best above.
-    all_ends = ends
-    scaler = StandardScaler().fit(values[: all_ends[-1] + 1])
-    scaled = scaler.transform(values).astype(np.float32)
-    y_scale = float(np.std(target[all_ends])) or 1.0
-    set_random_seed(42)
-    final = _build(lb, values.shape[1])
-    final.fit(
-        _windows(scaled, all_ends, lb), target[all_ends] / y_scale,
-        epochs=best_epochs, batch_size=BATCH_SIZE, shuffle=True, verbose=0,
-    )
-
+    # Retrain on everything for the live forecast, using the typical best epoch count.
+    final, scaler, _, y_scale, _ = _fit(values, target, ends, lb, epochs=metrics["epochs"])
     return {
         "model": final,
         "scaler": scaler,
@@ -111,6 +106,7 @@ def train(X: pd.DataFrame, fwd_ret: pd.Series, mode: Mode) -> dict:
         "features": list(X.columns),
         "trained_at": datetime.now(timezone.utc),
         "metrics": metrics,
+        "oof_pred": oof_pred,  # out-of-fold forecasts, used by the stacking meta-model
     }
 
 

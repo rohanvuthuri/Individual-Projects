@@ -17,12 +17,15 @@ import joblib
 import pandas as pd
 
 from ..modes import Mode
-from . import gbm, lstm
+from . import gbm, lstm, stacking
 
 log = logging.getLogger(__name__)
 
 CACHE_DIR = Path(__file__).resolve().parents[2] / "model_cache"
 ERROR_RETRY_SECONDS = 60
+# Bump when saved bundles change shape so old files on disk get retrained.
+# v2: out-of-fold predictions + stacking meta-model.
+BUNDLE_VERSION = 2
 
 _memory: dict[tuple[str, str, str], dict] = {}
 _key_locks: dict[tuple[str, str, str], threading.Lock] = {}
@@ -46,7 +49,11 @@ def _path(ticker: str, mode: Mode, kind: str, suffix: str) -> Path:
 
 
 def _is_fresh(bundle: dict | None, mode: Mode) -> bool:
-    return bundle is not None and datetime.now(timezone.utc) - bundle["trained_at"] < mode.model_max_age
+    return (
+        bundle is not None
+        and bundle.get("version") == BUNDLE_VERSION
+        and datetime.now(timezone.utc) - bundle["trained_at"] < mode.model_max_age
+    )
 
 
 # ---------------------------------------------------------------- gradient boosting
@@ -72,6 +79,7 @@ def get_gbm(ticker: str, mode: Mode, X: pd.DataFrame, fwd_ret: pd.Series, close:
         if _is_fresh(bundle, mode) and bundle["features"] == list(X.columns):
             return bundle
         bundle = gbm.train(X, fwd_ret, close, mode)
+        bundle["version"] = BUNDLE_VERSION
         CACHE_DIR.mkdir(exist_ok=True)
         joblib.dump(bundle, _path(ticker, mode, "gbm", ".joblib"))
         _memory[key] = bundle
@@ -101,6 +109,18 @@ def _load_lstm(ticker: str, mode: Mode) -> dict | None:
 
 def _train_lstm_job(ticker: str, mode: Mode, X: pd.DataFrame, fwd_ret: pd.Series) -> None:
     bundle = lstm.train(X, fwd_ret, mode)
+    bundle["version"] = BUNDLE_VERSION
+
+    # The meta-model needs both models' out-of-fold predictions, so it trains
+    # once the LSTM's are ready. It rides along in the LSTM's saved bundle.
+    g = _load_gbm(ticker, mode)
+    bundle["stack"] = None
+    if g is not None and "oof_prob" in g:
+        try:
+            bundle["stack"] = stacking.train(g["oof_prob"], bundle["oof_pred"], X, fwd_ret, mode)
+        except Exception:
+            log.exception("Stacking meta-model failed for %s %s; falling back to the agreement rule", ticker, mode.key)
+
     CACHE_DIR.mkdir(exist_ok=True)
     bundle["model"].save(_path(ticker, mode, "lstm", ".keras"))
     joblib.dump({k: v for k, v in bundle.items() if k != "model"}, _path(ticker, mode, "lstm", ".joblib"))
@@ -115,26 +135,27 @@ def _on_done(job_key: tuple[str, str], future: Future) -> None:
             _errors[job_key] = (time.time(), str(future.exception()))
 
 
-def get_lstm(ticker: str, mode: Mode, X: pd.DataFrame, fwd_ret: pd.Series) -> tuple[str, dict | None, str | None]:
-    """Returns (status, bundle, error). Status is "ready", "training" or "error".
+def get_lstm(ticker: str, mode: Mode, X: pd.DataFrame, fwd_ret: pd.Series) -> tuple[str, dict | None, str | None, bool]:
+    """Returns (status, bundle, error, retraining). Status is "ready", "training" or "error".
 
-    A stale model is still returned as "ready" while a fresh one trains behind it.
+    A stale model is still returned as "ready" while a fresh one trains behind
+    it; `retraining` tells the frontend to keep polling for the new one.
     """
     job_key = (ticker, mode.key)
     bundle = _load_lstm(ticker, mode)
     if bundle is not None and bundle["features"] != list(X.columns):
         bundle = None
     if _is_fresh(bundle, mode):
-        return "ready", bundle, None
+        return "ready", bundle, None, False
 
     with _jobs_guard:
         if job_key not in _jobs:
             err = _errors.get(job_key)
             if err and time.time() - err[0] < ERROR_RETRY_SECONDS:
-                return ("ready", bundle, None) if bundle else ("error", None, err[1])
+                return ("ready", bundle, None, False) if bundle else ("error", None, err[1], False)
             _errors.pop(job_key, None)
             future = _executor.submit(_train_lstm_job, ticker, mode, X.copy(), fwd_ret.copy())
             future.add_done_callback(lambda f: _on_done(job_key, f))
             _jobs[job_key] = future
 
-    return ("ready", bundle, None) if bundle else ("training", None, None)
+    return ("ready", bundle, None, True) if bundle else ("training", None, None, True)

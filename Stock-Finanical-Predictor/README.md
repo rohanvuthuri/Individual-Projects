@@ -12,7 +12,10 @@ Each prediction combines two models:
 
 - **Gradient boosting** (scikit-learn `HistGradientBoostingClassifier`) on ~20 technical indicators gives the **probability the price is higher** after the horizon.
 - **LSTM neural network** (Keras) over the last 48–60 bars forecasts the **return over the horizon**, which gives a price target.
-- **Signal:** **Buy** or **Sell** only when both models agree. Otherwise **Hold**.
+- **Stacking meta-model** (a constrained logistic regression) learns how much to trust each of the two models, and how that trust shifts with volatility. It learns only from the base models' predictions on data they never trained on.
+- **Signal:** the meta-model makes the call, but **only if its own backtest beats a naive guess** (accuracy above the naive baseline and AUC above 0.52). Otherwise the app uses the simpler rule: **Buy** or **Sell** only when both models agree, else **Hold**.
+
+The meta-model can ignore a model but never bet against it. With this little data (especially overlapping 6-month labels), a meta-model that learns to invert a model is almost always fitting noise.
 
 Every model is **backtested walk-forward**: it is trained on the past and scored on later data it never saw. The UI compares its accuracy with a naive "always guess the common direction" baseline. Most of the time the models do *not* beat that baseline, and the app says so. Stock prices are mostly noise, and the backtest is there to keep the predictions honest.
 
@@ -42,7 +45,7 @@ npm run dev
 
 Open http://localhost:5173. You don't need any API keys: prices come from Yahoo Finance via `yfinance`.
 
-The first prediction for a ticker and mode takes about 5–10 seconds while gradient boosting trains. The LSTM then trains in the background (roughly 10–60 seconds), and the page updates when it's done. Trained models are saved in `backend/model_cache/`. They are retrained after 1 hour (day trade), 1 day (swing) or 1 week (long-term).
+The first prediction for a ticker and mode takes about 5–10 seconds while gradient boosting trains. The LSTM (4 walk-forward folds plus a final fit) and then the meta-model train in the background (roughly 30–60 seconds), and the page updates when they're done. Trained models are saved in `backend/model_cache/`. They are retrained after 1 hour (day trade), 1 day (swing) or 1 week (long-term).
 
 ## Tests
 
@@ -56,6 +59,7 @@ The backend tests check:
 - the indicators against hand-calculated values
 - that features never use future prices (look-ahead leakage)
 - every API route, using synthetic data so the tests need no network
+- that the meta-model trusts an informative model, refuses to bet against a contrarian one, and doesn't earn trust from noise
 
 ## How it fits together
 
@@ -69,8 +73,10 @@ backend/app/
   fundamentals.py  P/E, PEG, margins, growth… scored good / neutral / weak
   signals.py       combines both models into Buy / Hold / Sell + confidence
   models/gbm.py    gradient boosting + walk-forward backtest + equity curve
-  models/lstm.py   LSTM + held-out backtest
-  models/registry.py  model caching and background LSTM training
+  models/lstm.py   LSTM + walk-forward backtest
+  models/stacking.py  meta-model trained on both models' out-of-fold predictions
+  models/validation.py  shared walk-forward folds + accuracy metrics
+  models/registry.py  model caching, background LSTM + meta-model training
 
 stock-financial-app/src/
   api/             typed fetch + React Query hooks (polls while the LSTM trains)
